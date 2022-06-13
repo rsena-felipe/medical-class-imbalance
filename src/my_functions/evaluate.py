@@ -2,14 +2,17 @@ import my_functions
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, balanced_accuracy_score, roc_curve, auc, f1_score, precision_score, recall_score, cohen_kappa_score
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-def calculate_f1score(input_file):
+def calculate_f1score(input_file, prediction_column, true_label_column):
     """
     Compute F1 weighted for training and validation
 
     Arguments:
     input_file (str) -- Path to .csv that has the predictions with columns and Prediction, True_Label, Split
+    prediction_column (str) -- Name of the prediction column
+    true_label_column (str) -- Name of the true label column
 
     Returns:
     f1_train (float) -- f1 weighted of training 
@@ -19,20 +22,26 @@ def calculate_f1score(input_file):
     df = pd.read_csv(input_file)
     df_train = df[ df["split"] == "training" ]
     df_val = df[ df["split"] == "validation" ]
+    df_test = df[ df["split"] == "testing" ]
 
     # Compute F1 Weighted Training
-    y_pred = df_train["Prediction"]
-    y_true = df_train["True_Label"]
+    y_pred = df_train[prediction_column]
+    y_true = df_train[true_label_column]
     f1_train = f1_score(y_true, y_pred, average = "weighted")
 
     # Compute F1 Weighted Validation
-    y_pred = df_val["Prediction"]
-    y_true = df_val["True_Label"]
+    y_pred = df_val[prediction_column]
+    y_true = df_val[true_label_column]
     f1_val = f1_score(y_true, y_pred, average = "weighted")
 
-    return f1_train, f1_val
+    # Compute F1 Weighted Testing
+    y_pred = df_test[prediction_column]
+    y_true = df_test[true_label_column]
+    f1_test = f1_score(y_true, y_pred, average = "weighted")
 
-def calculate_satisfying_metric(input_file):
+    return f1_train, f1_val, f1_test
+
+def calculate_satisfying_metric(input_file, prediction_column, true_label_column):
     """
     Compute auc, balanced accuracy, precision, recall for training and validation
 
@@ -43,87 +52,84 @@ def calculate_satisfying_metric(input_file):
     df = pd.read_csv(input_file)
     df_train = df[ df["split"] == "training" ]
     df_val = df[ df["split"] == "validation" ]
+    df_test = df[ df["split"] == "testing" ]
 
     # Training
     # Divide y_pred and y_true 
-    y_pred = df_train["Prediction"]
-    y_true = df_train["True_Label"]
+    y_pred = df_train[prediction_column]
+    y_true = df_train[true_label_column]
     
     # Compute Satisfying Metrics
     baccuracy_train = balanced_accuracy_score(y_true, y_pred)
     cohen_train = cohen_kappa_score(y_true, y_pred, weights="linear")
 
     # Validation
-    # Compute F1 Weighted 
-    y_pred = df_val["Prediction"]
-    y_true = df_val["True_Label"]
+    y_pred = df_val[prediction_column]
+    y_true = df_val[true_label_column]
     
 
     # Compute Satisfying Metrics
     baccuracy_val = balanced_accuracy_score(y_true, y_pred)
     cohen_val = cohen_kappa_score(y_true, y_pred, weights="linear")
 
-    return baccuracy_train, cohen_train, baccuracy_val, cohen_val  
+    # Test
+    y_pred = df_test[prediction_column]
+    y_true = df_test[true_label_column]
 
-def make_predictions(input_file, model, format_type, index_column = "PassengerId", target_column = "Survived"):
+    # Compute Satisfying Metrics
+    baccuracy_test = balanced_accuracy_score(y_true, y_pred)
+    cohen_test = cohen_kappa_score(y_true, y_pred, weights="linear")
+
+    return baccuracy_train, cohen_train, baccuracy_val, cohen_val, baccuracy_test, cohen_test  
+
+def make_predictions(input_file, model, variables, target_column, format_type = "csv"):
     """
     Make predictions using a sklearn model and put the true label in the same df
 
     Arguments:
     input_file (str) -- Path to .csv that has the features of the previously trained model
     model -- Sklearn model previously trained
+    variables (str) -- Column Names of the variables
     format_type (str) -- Format type of the save data (csv or pickle)
-    index_column -- Index column of the dataset
     target_column -- Target column of the dataset 
 
     Returns:
-    df -- Pandas Dataframe with three columns index, predictions and the true label
+    df -- Pandas Dataframe with thre columns  predictions, true label and split
     """
-    # Read the data
+    # Read the data depending on source file
     if format_type == "csv":
-        df = pd.read_csv(input_file).set_index(index_column)
+        df = pd.read_csv(input_file)
     elif format_type == "pickle":
         df = pd.read_pickle(input_file)  
 
-    df.rename(columns = {"Survived":"True_Label"}, inplace = True) # To have a more meaningful name    
+    # Extract Variables and target
+    X = df[variables]
+    y = df[target_column]
 
-    # Create X (train values with features already computed)
-    X, _ = my_functions.create_features_target(input_file, target_column = target_column, index_column = index_column, format_type = format_type)
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
 
     # Make predictions
-    y_true = df["True_Label"]
-    y_pred = pd.DataFrame(model.predict(X), index=df.index, columns = ["Prediction"])
+    predictions = model.predict(X)
     
-    df = pd.concat([y_pred, y_true], axis=1)
 
-    # Label data into live and die to have a more meaningful name
-    df["True_Label"] = df["True_Label"].apply(lambda x: 'die' if x == 0 else 'live')
-    df["Prediction"] = df["Prediction"].apply(lambda x: 'die' if x <= 0.5 else 'live') #  It is set like this so it works for models that return probabilities, 0.5 serves as a threshold
+    # Save predictions in a df
+    y_pred_train = pd.DataFrame(predictions_train, columns = ["Prediction"])
+    y_pred_test = pd.DataFrame(predictions_test, columns = ["Prediction"])
+
+    # Create column that will refer to the split
+    y_pred_train["split"] = "training"
+    y_pred_test["split"] = "training"
+    
+
+    # concatenate dataframes
+    df_train["true_label"] = y_train
+    df_test = pd.concat([y_pred_test, y_test], axis=1)
+
+    # Append df
+    df = df_train.append(df_test) 
 
     return df
-
-def save_predictions(train_file, val_file, output_file, model, format_type, index_column = "PassengerId", target_column = "Survived"):
-    """
-    Make predictions on the train and validation data and saves it to a .csv
-
-    Arguments:
-    train_file (str) -- Path to .csv that has the features 
-    val_file (str) -- Path to .csv that has the features 
-    output_file (str) -- Path to .csv where the predictions are going to be saved
-    index_column -- Index column of the dataset
-    target_column -- Target column of the dataset 
-    """
-
-    # Make predictions for training
-    df_train = make_predictions(train_file, model, format_type, index_column, target_column)
-    df_train["split"] = "training"
-
-    # Make predictions for validation
-    df_val = make_predictions(val_file, model, format_type, index_column, target_column)
-    df_val["split"] = "validation"
-    
-    df = df_train.append(df_val) 
-    df.to_csv(output_file)
 
 # Metrics Plots
 
@@ -158,7 +164,7 @@ def plot_roc_curve(model, X, y, title = "Receiver Operating Characteristic"):
     plt.show()
 
 
-def plot_confusion_matrix(input_file, split):
+def plot_confusion_matrix(input_file, split, true_label_column, prediction_column):
     """
     Plot Confusion Matrix
 
@@ -172,22 +178,32 @@ def plot_confusion_matrix(input_file, split):
     df = pd.read_csv(input_file)
     df = df[df['split'] == split]
 
-    labels = ['live', 'die']
+    labels = ['diabetes', 'healthy']
     
-    cm = confusion_matrix(df.True_Label, df.Prediction, normalize = 'true')
+    cm = confusion_matrix(df[true_label_column], df[prediction_column], normalize = 'true')
     cm = cm*100 # Multiply by 100 so te percentage is 99.7% instead of 0.997%
     cm = pd.DataFrame(cm, index=labels, columns=labels)        
 
-    # Customize heatmap (Confusion Matrix)
-    sns.set(font_scale = 1.5)
-    ax = sns.heatmap(cm, cmap='BuGn', annot=True, annot_kws={"size": 18,"weight":"bold"}, cbar=False, fmt='.3g')
-    for t in ax.texts: t.set_text(t.get_text() + " %") # Put percentage in confusion matrix
-    plt.xlabel('Predicted',weight='bold')
-    plt.ylabel('Known',weight='bold')
-    plt.yticks(rotation=0) 
-    plt.xticks(rotation=0)
+    if split == "training":
+        # Customize heatmap (Confusion Matrix)
+        sns.set(font_scale = 1.5)
+        ax = sns.heatmap(cm, cmap='BuGn', annot=True, annot_kws={"size": 18,"weight":"bold"}, cbar=False, fmt='.3g')
+        for t in ax.texts: t.set_text(t.get_text() + " %") # Put percentage in confusion matrix
+        plt.xlabel('Predicted',weight='bold',size=18)
+        plt.ylabel('Known',weight='bold',size=18)
+        plt.yticks(rotation=0,size=14) 
+        plt.xticks(rotation=0 ,size=14)
+    elif ((split == "validation") | (split == "testing") ):
+        # Customize heatmap (Confusion Matrix)
+        sns.set(font_scale = 1.5)
+        ax = sns.heatmap(cm, cmap='BuGn', annot=True, annot_kws={"size": 18,"weight":"bold"}, cbar=False, fmt='.3g')
+        for t in ax.texts: t.set_text(t.get_text() + " %") # Put percentage in confusion matrix
+        plt.xlabel('Predicted',weight='bold',size=18)
+        plt.yticks([])
+        plt.xticks(rotation=0, size=14)
 
-def plot_confusion_matrices(input_file):
+
+def plot_confusion_matrices(input_file, true_label_column, prediction_column):
     """
     Plot Confusion Matrices of training and validation set
 
@@ -199,12 +215,16 @@ def plot_confusion_matrices(input_file):
     """      
     
     plt.rcParams['figure.figsize'] = [18, 5]
-    plt.subplot(1,2,1)
-    plot_confusion_matrix(input_file, "training")
+    plt.subplot(1,3,1)
+    plot_confusion_matrix(input_file, "training", true_label_column, prediction_column)
     plt.title("Matrix Training")
-    plt.subplot(1,2,2)
-    plot_confusion_matrix(input_file, "validation")
+    plt.subplot(1,3,2)
+    plot_confusion_matrix(input_file, "validation", true_label_column, prediction_column)
     plt.title("Matrix Validation")
+    plt.subplot(1,3,3)
+    plot_confusion_matrix(input_file, "testing", true_label_column, prediction_column)
+    plt.title("Matrix Testing")
+
 
 def plot_classification_report(input_file, split):
     """
