@@ -1,4 +1,4 @@
-# Hangling Class Imbalance with medical data 
+# Handling Class Imbalance with medical data 
 
 
 
