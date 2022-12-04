@@ -67,3 +67,5 @@ The project is structured as follows:
 - src: UDF functions to call in the notebooks (to create graphs and clean data mostly)
 
 The files tesis.pdf describe in much more detail this code and the training procedure. As well as describe in depth the SMOTE with Active Learning algorithm.
+
+The file configurations.yml is the virtual environment you can use to reproduce the results in this repo.
